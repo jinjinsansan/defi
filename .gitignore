@@ -1,0 +1,21 @@
+# Node
+node_modules/
+
+# Hardhat
+contracts/cache/
+contracts/artifacts/
+contracts/typechain-types/
+contracts/.env
+
+# Next.js
+web/.next/
+web/out/
+web/.env*
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
