@@ -9,9 +9,8 @@ Populate the following keys wherever the Next.js app runs (local `.env.local`, V
 | Variable | Scope | Description |
 | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | client | Supabase project URL (e.g. `https://xyz.supabase.co`). |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | client | Anonymous API key. Not used directly yet, but exposes whether the activity widget should render. |
-| `SUPABASE_URL` | server (Next.js runtime) | Same as above; consumed by the API route. |
-| `SUPABASE_SERVICE_ROLE_KEY` | server (secret) | Service role key used for signed inserts/selects. **Never expose to the client.** |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | client | Publishable key (formerly anon key). Not used directly yet, but exposes whether the activity widget should render. |
+| `SUPABASE_SECRET_KEY` | server (secret) | Secret key (formerly service_role key) used for signed inserts/selects. **Never expose to the client.** |
 
 > Tip: When running locally, create `web/.env.local` and mirror the entries from `web/.env.example`.
 
