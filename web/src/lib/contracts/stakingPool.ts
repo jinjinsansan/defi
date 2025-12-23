@@ -1,6 +1,6 @@
 import { JsonRpcProvider, type Provider, type Signer } from "ethers";
-import { StakingPool__factory } from "./types/factories/StakingPool__factory";
-import type { StakingPool } from "./types/StakingPool";
+import { StakingPool__factory } from "./types/factories/staking/StakingPool__factory";
+import type { StakingPool } from "./types/staking/StakingPool";
 
 const stakingPoolAddress = process.env.NEXT_PUBLIC_STAKING_POOL_ADDRESS ?? "";
 const stakingTokenAddress = process.env.NEXT_PUBLIC_STAKING_TOKEN_ADDRESS ?? "";

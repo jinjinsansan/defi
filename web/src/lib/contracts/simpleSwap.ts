@@ -1,6 +1,6 @@
 import { JsonRpcProvider, type Provider, type Signer } from "ethers";
-import { SimpleSwap__factory } from "./types/factories/SimpleSwap__factory";
-import type { SimpleSwap } from "./types/SimpleSwap";
+import { SimpleSwap__factory } from "./types/factories/amm/SimpleSwap__factory";
+import type { SimpleSwap } from "./types/amm/SimpleSwap";
 
 export const simpleSwapAddress = process.env.NEXT_PUBLIC_SIMPLE_SWAP_ADDRESS ?? "";
 

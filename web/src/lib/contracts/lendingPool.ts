@@ -1,6 +1,6 @@
 import { JsonRpcProvider, type Provider, type Signer } from "ethers";
-import { LendingPool__factory } from "./types/factories/LendingPool__factory";
-import type { LendingPool } from "./types/LendingPool";
+import { LendingPool__factory } from "./types/factories/lending/LendingPool__factory";
+import type { LendingPool } from "./types/lending/LendingPool";
 
 const lendingPoolAddress = process.env.NEXT_PUBLIC_LENDING_POOL_ADDRESS ?? "";
 const collateralTokenAddress = process.env.NEXT_PUBLIC_COLLATERAL_TOKEN_ADDRESS ?? "";
