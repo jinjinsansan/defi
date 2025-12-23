@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   BrowserProvider,
   Contract,
@@ -58,6 +58,7 @@ const CHAIN_EXPLORERS: Record<number, string> = {
   80002: "https://amoy.polygonscan.com",
   97: "https://testnet.bscscan.com",
 };
+const ACTIVITY_CATEGORIES: ActivityCategory[] = ["guardian", "swap", "liquidity", "staking", "lending", "system"];
 
 type TokenSide = "token0" | "token1";
 
@@ -104,6 +105,24 @@ export default function Home() {
   const [connectionMethod, setConnectionMethod] = useState<"metamask" | "walletconnect" | null>(null);
   const [walletConnectProvider, setWalletConnectProvider] = useState<EthereumProvider | null>(null);
   const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>([]);
+  const [activityNotice, setActivityNotice] = useState<string | null>(null);
+  const [activityFilter, setActivityFilter] = useState<ActivityCategory | "all">("all");
+  const [activityAutoRefresh, setActivityAutoRefresh] = useState(false);
+  const [adminForms, setAdminForms] = useState({
+    simpleSwapTreasury: "",
+    simpleSwapInit0: "",
+    simpleSwapInit1: "",
+    simpleSwapInitMinShares: "",
+    stakingRewardRate: "",
+    lendingCollateralFactor: "",
+    lendingLiquidationThreshold: "",
+    lendingLiquidationBonus: "",
+    lendingInterestRate: "",
+    lendingCollateralOracle: "",
+    lendingDebtOracle: "",
+    lendingProvideAmount: "",
+    lendingWithdrawAmount: "",
+  });
   const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "";
   const defaultChainIdEnv = Number.parseInt(process.env.NEXT_PUBLIC_DEFAULT_CHAIN_ID ?? "11155111", 10);
   const primaryChainId = Number.isNaN(defaultChainIdEnv) ? 11155111 : defaultChainIdEnv;
@@ -118,6 +137,33 @@ export default function Home() {
   }, [primaryChainId]);
   const activityEnabled = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL);
   const explorerBaseUrl = CHAIN_EXPLORERS[primaryChainId];
+  const adminAddress = (process.env.NEXT_PUBLIC_ADMIN_ADDRESS ?? "").toLowerCase();
+  const adminConfigured = Boolean(adminAddress);
+  const isAdmin = useMemo(() => {
+    if (!account || !adminAddress) {
+      return false;
+    }
+    return account.toLowerCase() === adminAddress;
+  }, [account, adminAddress]);
+  const panelClass =
+    "rounded-2xl border border-[#1f232b] bg-gradient-to-br from-[#111521] via-[#0b0f17] to-[#05070c] p-6 shadow-[0_10px_40px_rgba(0,0,0,0.55)]";
+  const sectionCardClass =
+    "rounded-xl border border-[#1c222f] bg-[#0f141d]/90 p-4 shadow-[0_10px_25px_rgba(0,0,0,0.45)]";
+  const inputBase =
+    "w-full rounded border border-[#232936] bg-[#05070c] p-2 text-sm focus:border-[#f0b90b] focus:outline-none";
+  const primaryButtonClass =
+    "rounded bg-[#f0b90b] px-5 py-2 text-sm font-semibold text-black transition hover:bg-[#f5c842] disabled:opacity-40";
+  const secondaryButtonClass =
+    "rounded border border-[#f0b90b]/70 px-5 py-2 text-sm font-semibold text-[#f0b90b] transition hover:border-[#f5c842] hover:text-[#f5c842] disabled:opacity-40";
+  const subtleButtonClass =
+    "rounded bg-[#131923] px-4 py-2 text-sm font-semibold text-[#f7f8fa] transition hover:bg-[#1a2130] disabled:opacity-40";
+  const ghostButtonClass =
+    "rounded border border-white/30 px-4 py-2 text-sm text-slate-200 transition hover:border-white/60";
+  const accentTextClass = "text-[#f0b90b]";
+  const miniGhostButton =
+    "rounded border border-[#2a2f3b] px-3 py-1 text-xs text-slate-200 transition hover:border-[#f0b90b]";
+  const miniPrimaryButton =
+    "rounded bg-[#f0b90b] px-3 py-1 text-xs font-semibold text-black transition hover:bg-[#f5c842] disabled:opacity-40";
   const formattedBalance = useMemo(() => {
     const parsed = parseFloat(vaultBalance);
     return Number.isFinite(parsed) ? parsed.toFixed(4) : vaultBalance;
@@ -200,13 +246,31 @@ export default function Home() {
     setStatus("");
   }, []);
 
+  const updateAdminForm = useCallback(
+    (field: keyof typeof adminForms, value: string) => {
+      setAdminForms((prev) => ({ ...prev, [field]: value }));
+    },
+    [],
+  );
+
+  const ensureAdminAccess = useCallback(() => {
+    if (!isAdmin) {
+      throw new Error("管理者権限が必要です。");
+    }
+  }, [isAdmin]);
+
   const loadActivityLogs = useCallback(async () => {
     if (!activityEnabled) {
       setActivityLogs([]);
       return;
     }
     try {
-      const response = await fetch("/api/activity");
+      const params = new URLSearchParams();
+      if (activityFilter !== "all") {
+        params.set("category", activityFilter);
+      }
+      const query = params.toString();
+      const response = await fetch(`/api/activity${query ? `?${query}` : ""}`);
       if (!response.ok) {
         console.error("Failed to fetch activity logs");
         return;
@@ -216,39 +280,67 @@ export default function Home() {
     } catch (err) {
       console.error(err);
     }
-  }, [activityEnabled]);
+  }, [activityEnabled, activityFilter]);
+
+  const handleActivityFilterChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
+    setActivityFilter(event.target.value as ActivityCategory | "all");
+  }, []);
+
+  const toggleActivityAutoRefresh = useCallback(() => {
+    setActivityAutoRefresh((prev) => {
+      const next = !prev;
+      if (!prev && activityEnabled) {
+        loadActivityLogs();
+      }
+      return next;
+    });
+  }, [activityEnabled, loadActivityLogs]);
 
   const logActivity = useCallback(
     async (payload: CreateActivityPayload) => {
       if (!activityEnabled || !signer || !account) {
         return;
       }
-      try {
-        const nonce = Date.now().toString();
-        const message = buildActivityMessage({
-          ...payload,
-          account,
-          nonce,
-        });
-        const signature = await signer.signMessage(message);
-        const response = await fetch("/api/activity", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...payload,
-            account,
-            nonce,
-            signature,
-          }),
-        });
-        if (!response.ok) {
-          const body = (await response.json().catch(() => ({}))) as { error?: string };
-          throw new Error(body.error ?? "Failed to log activity");
+      const nonce = Date.now().toString();
+      const logMessage = buildActivityMessage({
+        ...payload,
+        account,
+        nonce,
+      });
+      const signature = await signer.signMessage(logMessage);
+      const requestBody = JSON.stringify({
+        ...payload,
+        account,
+        nonce,
+        signature,
+      });
+      const maxAttempts = 3;
+      const baseDelay = 750;
+      let lastError: Error | null = null;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const response = await fetch("/api/activity", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: requestBody,
+          });
+          if (!response.ok) {
+            const body = (await response.json().catch(() => ({}))) as { error?: string };
+            throw new Error(body.error ?? `Activity API responded ${response.status}`);
+          }
+          await loadActivityLogs();
+          setActivityNotice(null);
+          return;
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error("Activity log failed");
+          console.error("Activity log failed", err);
+          if (attempt < maxAttempts) {
+            const delay = baseDelay * attempt;
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
         }
-        await loadActivityLogs();
-      } catch (err) {
-        console.error("Activity log failed", err);
       }
+      setActivityNotice(`アクティビティログに記録できませんでした: ${lastError?.message ?? "unknown error"}`);
     },
     [account, activityEnabled, loadActivityLogs, signer],
   );
@@ -451,6 +543,16 @@ export default function Home() {
   useEffect(() => {
     loadActivityLogs();
   }, [loadActivityLogs]);
+
+  useEffect(() => {
+    if (!activityEnabled || !activityAutoRefresh) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      loadActivityLogs();
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [activityAutoRefresh, activityEnabled, loadActivityLogs]);
 
   const connectWallet = useCallback(async () => {
     resetMessages();
@@ -711,6 +813,85 @@ export default function Home() {
     }
   };
 
+  const handleSimpleSwapSetTreasury = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    resetMessages();
+    if (!simpleSwapConfigured) {
+      setError("SimpleSwap の設定を確認してください。");
+      return;
+    }
+    const treasuryAddress = adminForms.simpleSwapTreasury.trim();
+    if (!isAddress(treasuryAddress)) {
+      setError("有効なトレジャリーアドレスを入力してください。");
+      return;
+    }
+    try {
+      ensureAdminAccess();
+      requireAccount();
+      setBusy(true);
+      const contract = ensureSimpleSwapContract();
+      const normalized = getAddress(treasuryAddress);
+      const tx = await contract.setTreasury(normalized);
+      await tx.wait();
+      setStatus("SimpleSwap のトレジャリーを更新しました。");
+      await logActivity({
+        category: "system",
+        description: `SimpleSwap treasury → ${shorten(normalized)}`,
+        txHash: tx.hash,
+      });
+      setAdminForms((prev) => ({ ...prev, simpleSwapTreasury: "" }));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSimpleSwapAdminLiquidity = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    resetMessages();
+    if (!simpleSwapConfigured) {
+      setError("SimpleSwap の設定を確認してください。");
+      return;
+    }
+    const amount0 = parseTokenAmount(adminForms.simpleSwapInit0, "token0");
+    const amount1 = parseTokenAmount(adminForms.simpleSwapInit1, "token1");
+    if (amount0 === 0n || amount1 === 0n) {
+      setError("両トークンの金額を入力してください。");
+      return;
+    }
+    const minShares = adminForms.simpleSwapInitMinShares
+      ? parseUnits(adminForms.simpleSwapInitMinShares, 18)
+      : 0n;
+    try {
+      ensureAdminAccess();
+      const walletAccount = requireAccount();
+      setBusy(true);
+      await ensureTokenAllowance(tokenMetadata.token0.address, simpleSwapAddress, amount0);
+      await ensureTokenAllowance(tokenMetadata.token1.address, simpleSwapAddress, amount1);
+      const contract = ensureSimpleSwapContract();
+      const tx = await contract.addLiquidity(amount0, amount1, minShares, walletAccount);
+      await tx.wait();
+      setStatus("管理者として流動性を追加しました。");
+      await logActivity({
+        category: "liquidity",
+        description: `管理流動性追加 ${adminForms.simpleSwapInit0 || "0"} ${tokenMetadata.token0.symbol} (by ${shorten(walletAccount)})`,
+        txHash: tx.hash,
+      });
+      setAdminForms((prev) => ({
+        ...prev,
+        simpleSwapInit0: "",
+        simpleSwapInit1: "",
+        simpleSwapInitMinShares: "",
+      }));
+      await Promise.all([loadSwapSnapshot(), loadUserLpBalance()]);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleSwap = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     resetMessages();
@@ -828,6 +1009,39 @@ export default function Home() {
       });
       setStakingAmount((prev) => ({ ...prev, withdraw: "" }));
       await loadStakingSnapshot();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleStakingRewardRateUpdate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    resetMessages();
+    if (!stakingConfigured) {
+      setError("StakingPool の設定を確認してください。");
+      return;
+    }
+    if (!adminForms.stakingRewardRate.trim()) {
+      setError("新しい報酬レートを入力してください。");
+      return;
+    }
+    try {
+      ensureAdminAccess();
+      requireAccount();
+      setBusy(true);
+      const newRate = parseUnits(adminForms.stakingRewardRate, stakingMetadata.rewardToken.decimals);
+      const contract = ensureStakingContract();
+      const tx = await contract.setRewardRate(newRate);
+      await tx.wait();
+      setStatus("報酬レートを更新しました。");
+      await logActivity({
+        category: "system",
+        description: `Staking rewardRate → ${adminForms.stakingRewardRate} ${stakingMetadata.rewardToken.symbol}/s`,
+        txHash: tx.hash,
+      });
+      setAdminForms((prev) => ({ ...prev, stakingRewardRate: "" }));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -985,6 +1199,181 @@ export default function Home() {
     }
   };
 
+  const handleLendingRiskParameters = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    resetMessages();
+    if (!lendingConfigured) {
+      setError("LendingPool の設定を確認してください。");
+      return;
+    }
+    if (!adminForms.lendingCollateralFactor || !adminForms.lendingLiquidationThreshold || !adminForms.lendingLiquidationBonus) {
+      setError("全てのリスクパラメータを入力してください。");
+      return;
+    }
+    try {
+      ensureAdminAccess();
+      requireAccount();
+      setBusy(true);
+      const collateralFactor = parseUnits(adminForms.lendingCollateralFactor, 18);
+      const liquidationThreshold = parseUnits(adminForms.lendingLiquidationThreshold, 18);
+      const liquidationBonus = parseUnits(adminForms.lendingLiquidationBonus, 18);
+      const contract = ensureLendingContract();
+      const tx = await contract.setRiskParameters(collateralFactor, liquidationThreshold, liquidationBonus);
+      await tx.wait();
+      setStatus("リスクパラメータを更新しました。");
+      await logActivity({
+        category: "lending",
+        description: "リスクパラメータを更新",
+        txHash: tx.hash,
+      });
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleLendingInterestRateUpdate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    resetMessages();
+    if (!lendingConfigured) {
+      setError("LendingPool の設定を確認してください。");
+      return;
+    }
+    if (!adminForms.lendingInterestRate.trim()) {
+      setError("新しい金利を入力してください。");
+      return;
+    }
+    try {
+      ensureAdminAccess();
+      requireAccount();
+      setBusy(true);
+      const newRate = parseUnits(adminForms.lendingInterestRate, 18);
+      const contract = ensureLendingContract();
+      const tx = await contract.setInterestRate(newRate);
+      await tx.wait();
+      setStatus("金利を更新しました。");
+      await logActivity({
+        category: "lending",
+        description: `借入利率を ${adminForms.lendingInterestRate} /s に更新`,
+        txHash: tx.hash,
+      });
+      setAdminForms((prev) => ({ ...prev, lendingInterestRate: "" }));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleLendingSetOracles = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    resetMessages();
+    if (!lendingConfigured) {
+      setError("LendingPool の設定を確認してください。");
+      return;
+    }
+    if (!isAddress(adminForms.lendingCollateralOracle) || !isAddress(adminForms.lendingDebtOracle)) {
+      setError("有効なオラクルアドレスを入力してください。");
+      return;
+    }
+    try {
+      ensureAdminAccess();
+      requireAccount();
+      setBusy(true);
+      const contract = ensureLendingContract();
+      const tx = await contract.setOracles(
+        getAddress(adminForms.lendingCollateralOracle),
+        getAddress(adminForms.lendingDebtOracle),
+      );
+      await tx.wait();
+      setStatus("オラクルアドレスを更新しました。");
+      await logActivity({
+        category: "lending",
+        description: "オラクルアドレスを更新",
+        txHash: tx.hash,
+      });
+      setAdminForms((prev) => ({ ...prev, lendingCollateralOracle: "", lendingDebtOracle: "" }));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleLendingProvideLiquidity = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    resetMessages();
+    if (!lendingConfigured) {
+      setError("LendingPool の設定を確認してください。");
+      return;
+    }
+    const amount = adminForms.lendingProvideAmount
+      ? parseUnits(adminForms.lendingProvideAmount, lendingMetadata.debtToken.decimals)
+      : 0n;
+    if (amount === 0n) {
+      setError("追加する流動性量を入力してください。");
+      return;
+    }
+    try {
+      ensureAdminAccess();
+      const walletAccount = requireAccount();
+      setBusy(true);
+      await ensureTokenAllowance(lendingMetadata.debtToken.address, lendingMetadata.poolAddress, amount);
+      const contract = ensureLendingContract();
+      const tx = await contract.provideLiquidity(amount);
+      await tx.wait();
+      setStatus("プールに流動性を追加しました。");
+      await logActivity({
+        category: "lending",
+        description: `プールへ ${adminForms.lendingProvideAmount} ${lendingMetadata.debtToken.symbol} 追加 (by ${shorten(walletAccount)})`,
+        txHash: tx.hash,
+      });
+      setAdminForms((prev) => ({ ...prev, lendingProvideAmount: "" }));
+      await loadLendingSnapshot();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleLendingWithdrawLiquidity = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    resetMessages();
+    if (!lendingConfigured) {
+      setError("LendingPool の設定を確認してください。");
+      return;
+    }
+    const amount = adminForms.lendingWithdrawAmount
+      ? parseUnits(adminForms.lendingWithdrawAmount, lendingMetadata.debtToken.decimals)
+      : 0n;
+    if (amount === 0n) {
+      setError("引き出す流動性量を入力してください。");
+      return;
+    }
+    try {
+      ensureAdminAccess();
+      requireAccount();
+      setBusy(true);
+      const contract = ensureLendingContract();
+      const tx = await contract.withdrawLiquidity(amount);
+      await tx.wait();
+      setStatus("プールから流動性を引き出しました。");
+      await logActivity({
+        category: "lending",
+        description: `${adminForms.lendingWithdrawAmount} ${lendingMetadata.debtToken.symbol} を運営ウォレットへ引き出し`,
+        txHash: tx.hash,
+      });
+      setAdminForms((prev) => ({ ...prev, lendingWithdrawAmount: "" }));
+      await loadLendingSnapshot();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const formatAmount = (entry: WithdrawalEntry) => {
     if (entry.data.asset === ZeroAddress) {
       const ethAmount = parseFloat(formatEther(entry.data.amount));
@@ -1065,6 +1454,7 @@ export default function Home() {
     lending: "レンディング",
     system: "システム",
   };
+  const activityFilterOptions: (ActivityCategory | "all")[] = ["all", ...ACTIVITY_CATEGORIES];
 
   const guardrailMessage = !guardianVaultAddress || !rpcUrl;
   const simpleSwapGuardrail = !simpleSwapConfigured || !rpcUrl;
@@ -1083,13 +1473,13 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
-      <div className="mx-auto flex max-w-5xl flex-col gap-8 px-6 py-10">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#171f2f,#050608_65%)] text-[#f7f8fa]">
+      <div className="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-12">
         <header className="space-y-3">
-          <p className="text-sm uppercase tracking-widest text-emerald-400">Guardian Vault</p>
-          <h1 className="text-3xl font-semibold">マルチシグ金庫ダッシュボード</h1>
-          <p className="text-sm text-slate-300">
-            Pausable なマルチシグ金庫の状況確認と、ETH 出金リクエストの作成・承認・実行を行えます。
+          <p className="text-sm uppercase tracking-[0.4em] text-[#f0b90b]">Guardian Vault</p>
+          <h1 className="text-3xl font-semibold text-white">マルチシグ & DeFi コントロールセンター</h1>
+          <p className="text-sm text-slate-200">
+            Binance 風のクリアな UI で金庫、スワップ、ステーキング、レンディング、そして管理タスクをまとめて操作できます。
           </p>
         </header>
 
@@ -1111,24 +1501,24 @@ export default function Home() {
         )}
 
         <section className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-            <p className="text-xs text-slate-300">金庫アドレス</p>
-            <p className="truncate text-lg font-semibold">{guardianVaultAddress || "未設定"}</p>
+          <div className={sectionCardClass}>
+            <p className="text-xs uppercase tracking-widest text-slate-400">金庫アドレス</p>
+            <p className="truncate text-lg font-semibold text-white">{guardianVaultAddress || "未設定"}</p>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-            <p className="text-xs text-slate-300">必要承認数</p>
-            <p className="text-3xl font-semibold">{threshold || "-"}</p>
+          <div className={sectionCardClass}>
+            <p className="text-xs uppercase tracking-widest text-slate-400">必要承認数</p>
+            <p className={`text-3xl font-semibold ${accentTextClass}`}>{threshold || "-"}</p>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-            <p className="text-xs text-slate-300">ETH 残高</p>
-            <p className="text-3xl font-semibold">{formattedBalance} ETH</p>
+          <div className={sectionCardClass}>
+            <p className="text-xs uppercase tracking-widest text-slate-400">ETH 残高</p>
+            <p className="text-3xl font-semibold text-white">{formattedBalance} ETH</p>
           </div>
         </section>
 
-        <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/10 bg-white/5 p-4">
+        <section className={`${panelClass} flex flex-wrap items-center justify-between gap-4`}>
           <div>
-            <p className="text-xs text-slate-300">接続中ウォレット</p>
-            <p className="text-lg font-semibold">{account ? shorten(account) : "未接続"}</p>
+            <p className="text-xs uppercase tracking-widest text-slate-400">接続中ウォレット</p>
+            <p className="text-lg font-semibold text-white">{account ? shorten(account) : "未接続"}</p>
             <p className="text-xs text-slate-400">
               {connectionMethod === "walletconnect"
                 ? "WalletConnect"
@@ -1138,54 +1528,241 @@ export default function Home() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              className="rounded bg-emerald-500 px-5 py-2 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:opacity-40"
-              onClick={connectWallet}
-              disabled={busy}
-            >
+            <button className={primaryButtonClass} onClick={connectWallet} disabled={busy}>
               MetaMask 接続
             </button>
-            <button
-              className="rounded border border-emerald-400 px-5 py-2 text-sm font-semibold text-emerald-200 transition hover:border-emerald-300 hover:text-emerald-100 disabled:opacity-40"
-              onClick={connectWalletConnect}
-              disabled={busy || !walletConnectProjectId}
-            >
+            <button className={secondaryButtonClass} onClick={connectWalletConnect} disabled={busy || !walletConnectProjectId}>
               WalletConnect
             </button>
             {account && (
-              <button
-                className="rounded border border-white/30 px-4 py-2 text-sm text-slate-200 transition hover:border-white/60"
-                onClick={disconnectWallet}
-                disabled={busy}
-              >
+              <button className={ghostButtonClass} onClick={disconnectWallet} disabled={busy}>
                 切断
               </button>
             )}
           </div>
         </section>
 
+        {isAdmin && (
+          <section className={panelClass}>
+            <div className="mb-4 space-y-1">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-white">管理ツール</h2>
+                {!activityEnabled && (
+                  <span className="text-xs text-amber-300">Activity ログ (Supabase) が無効です</span>
+                )}
+              </div>
+              {!adminConfigured && <p className="text-xs text-amber-200">NEXT_PUBLIC_ADMIN_ADDRESS が未設定です。</p>}
+              <p className="text-sm text-slate-300">SimpleSwap / Staking / Lending の運営操作をここから実行できます。</p>
+            </div>
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div className={`${sectionCardClass} space-y-4`}>
+                <h3 className="text-base font-semibold text-white">SimpleSwap 管理</h3>
+                <form className="space-y-2 text-sm" onSubmit={handleSimpleSwapSetTreasury}>
+                  <label className="block">
+                    <span className="mb-1 block text-slate-300">トレジャリーアドレス</span>
+                    <input
+                      className={inputBase}
+                      value={adminForms.simpleSwapTreasury}
+                      onChange={(e) => updateAdminForm("simpleSwapTreasury", e.target.value)}
+                      placeholder="0x..."
+                    />
+                  </label>
+                  <button type="submit" className={`${primaryButtonClass} w-full`} disabled={busy}>
+                    トレジャリーを更新
+                  </button>
+                </form>
+                <form className="space-y-2 text-sm" onSubmit={handleSimpleSwapAdminLiquidity}>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label>
+                      <span className="mb-1 block text-slate-300">{tokenMetadata.token0.symbol}</span>
+                      <input className={inputBase}
+                        value={adminForms.simpleSwapInit0}
+                        onChange={(e) => updateAdminForm("simpleSwapInit0", e.target.value)}
+                        placeholder="0.0"
+                      />
+                    </label>
+                    <label>
+                      <span className="mb-1 block text-slate-300">{tokenMetadata.token1.symbol}</span>
+                      <input className={inputBase}
+                        value={adminForms.simpleSwapInit1}
+                        onChange={(e) => updateAdminForm("simpleSwapInit1", e.target.value)}
+                        placeholder="0.0"
+                      />
+                    </label>
+                  </div>
+                  <label className="block">
+                    <span className="mb-1 block text-slate-300">最小受取 LP (任意)</span>
+                    <input className={inputBase}
+                      value={adminForms.simpleSwapInitMinShares}
+                      onChange={(e) => updateAdminForm("simpleSwapInitMinShares", e.target.value)}
+                      placeholder="0"
+                    />
+                  </label>
+                  <button type="submit" className={`${secondaryButtonClass} w-full`} disabled={busy}>
+                    管理者として流動性追加
+                  </button>
+                </form>
+              </div>
+              <div className={`${sectionCardClass} space-y-4`}>
+                <h3 className="text-base font-semibold text-white">Staking 管理</h3>
+                <form className="space-y-2 text-sm" onSubmit={handleStakingRewardRateUpdate}>
+                  <label className="block">
+                    <span className="mb-1 block text-slate-300">新しい rewardRate ({stakingMetadata.rewardToken.symbol}/秒)</span>
+                    <input className={inputBase}
+                      value={adminForms.stakingRewardRate}
+                      onChange={(e) => updateAdminForm("stakingRewardRate", e.target.value)}
+                      placeholder="0.0"
+                    />
+                  </label>
+                  <button type="submit" className={`${primaryButtonClass} w-full`} disabled={busy}>
+                    報酬レートを更新
+                  </button>
+                </form>
+              </div>
+            </div>
+            <div className="mt-6 grid gap-6 lg:grid-cols-2">
+              <div className={`${sectionCardClass} space-y-4`}>
+                <h3 className="text-base font-semibold text-white">Lending パラメータ</h3>
+                <form className="grid gap-2 text-sm" onSubmit={handleLendingRiskParameters}>
+                  <label>
+                    <span className="mb-1 block text-slate-300">担保係数 (0-1)</span>
+                    <input className={inputBase}
+                      value={adminForms.lendingCollateralFactor}
+                      onChange={(e) => updateAdminForm("lendingCollateralFactor", e.target.value)}
+                      placeholder="0.7"
+                    />
+                  </label>
+                  <label>
+                    <span className="mb-1 block text-slate-300">清算しきい値 (0-1)</span>
+                    <input className={inputBase}
+                      value={adminForms.lendingLiquidationThreshold}
+                      onChange={(e) => updateAdminForm("lendingLiquidationThreshold", e.target.value)}
+                      placeholder="0.8"
+                    />
+                  </label>
+                  <label>
+                    <span className="mb-1 block text-slate-300">清算ボーナス (≥1)</span>
+                    <input className={inputBase}
+                      value={adminForms.lendingLiquidationBonus}
+                      onChange={(e) => updateAdminForm("lendingLiquidationBonus", e.target.value)}
+                      placeholder="1.05"
+                    />
+                  </label>
+                  <button type="submit" className={primaryButtonClass} disabled={busy}>
+                    リスクパラメータ更新
+                  </button>
+                </form>
+                <form className="space-y-2 text-sm" onSubmit={handleLendingInterestRateUpdate}>
+                  <label>
+                    <span className="mb-1 block text-slate-300">金利 (1 秒あたり, 例: 0.000001)</span>
+                    <input className={inputBase}
+                      value={adminForms.lendingInterestRate}
+                      onChange={(e) => updateAdminForm("lendingInterestRate", e.target.value)}
+                      placeholder="0.000001"
+                    />
+                  </label>
+                  <button type="submit" className={`${secondaryButtonClass} w-full`} disabled={busy}>
+                    金利を更新
+                  </button>
+                </form>
+                <form className="space-y-2 text-sm" onSubmit={handleLendingSetOracles}>
+                  <label>
+                    <span className="mb-1 block text-slate-300">担保オラクルアドレス</span>
+                    <input className={inputBase}
+                      value={adminForms.lendingCollateralOracle}
+                      onChange={(e) => updateAdminForm("lendingCollateralOracle", e.target.value)}
+                      placeholder="0x..."
+                    />
+                  </label>
+                  <label>
+                    <span className="mb-1 block text-slate-300">借入オラクルアドレス</span>
+                    <input className={inputBase}
+                      value={adminForms.lendingDebtOracle}
+                      onChange={(e) => updateAdminForm("lendingDebtOracle", e.target.value)}
+                      placeholder="0x..."
+                    />
+                  </label>
+                  <button type="submit" className={`${subtleButtonClass} w-full`} disabled={busy}>
+                    オラクルを更新
+                  </button>
+                </form>
+              </div>
+              <div className={`${sectionCardClass} space-y-4`}>
+                <h3 className="text-base font-semibold text-white">Lending 流動性操作</h3>
+                <form className="space-y-2 text-sm" onSubmit={handleLendingProvideLiquidity}>
+                  <label>
+                    <span className="mb-1 block text-slate-300">追加する {lendingMetadata.debtToken.symbol}</span>
+                    <input className={inputBase}
+                      value={adminForms.lendingProvideAmount}
+                      onChange={(e) => updateAdminForm("lendingProvideAmount", e.target.value)}
+                      placeholder="0.0"
+                    />
+                  </label>
+                  <button type="submit" className={`${primaryButtonClass} w-full`} disabled={busy}>
+                    流動性を追加
+                  </button>
+                </form>
+                <form className="space-y-2 text-sm" onSubmit={handleLendingWithdrawLiquidity}>
+                  <label>
+                    <span className="mb-1 block text-slate-300">引き出す {lendingMetadata.debtToken.symbol}</span>
+                    <input className={inputBase}
+                      value={adminForms.lendingWithdrawAmount}
+                      onChange={(e) => updateAdminForm("lendingWithdrawAmount", e.target.value)}
+                      placeholder="0.0"
+                    />
+                  </label>
+                  <button type="submit" className={`${ghostButtonClass} w-full`} disabled={busy}>
+                    流動性を引き出す
+                  </button>
+                </form>
+              </div>
+            </div>
+          </section>
+        )}
+
         {activityEnabled && (
-          <section className="rounded-2xl border border-white/10 bg-white/5 p-6">
-            <div className="mb-4 flex items-center justify-between">
+          <section className={panelClass}>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold">最新アクティビティ</h2>
+                <h2 className="text-xl font-semibold text-white">最新アクティビティ</h2>
                 <p className="text-sm text-slate-300">Supabase activity_logs テーブルの最新 25 件を表示します。</p>
               </div>
-              <button
-                className="rounded border border-white/30 px-3 py-1 text-xs text-slate-200 transition hover:border-white/60"
-                onClick={loadActivityLogs}
-              >
-                再読込
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="w-40 text-xs text-slate-300">
+                  <span className="mb-1 block">カテゴリ</span>
+                  <select className={inputBase} value={activityFilter} onChange={handleActivityFilterChange}>
+                    {activityFilterOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option === "all" ? "すべて" : activityCategoryLabels[option]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  className={activityAutoRefresh ? primaryButtonClass : subtleButtonClass}
+                  onClick={toggleActivityAutoRefresh}
+                >
+                  Auto Refresh {activityAutoRefresh ? "ON" : "OFF"}
+                </button>
+                <button type="button" className={ghostButtonClass} onClick={loadActivityLogs}>
+                  再読込
+                </button>
+              </div>
             </div>
+            {activityNotice && (
+              <div className="mb-4 rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+                {activityNotice}
+              </div>
+            )}
             {activityLogs.length === 0 ? (
               <p className="text-sm text-slate-400">まだ記録がありません。</p>
             ) : (
               <ul className="space-y-3">
                 {activityLogs.map((entry) => (
-                  <li key={entry.id} className="rounded border border-white/10 bg-slate-950/40 p-3">
+                  <li key={entry.id} className={`${sectionCardClass} border border-[#1c222f] bg-[#0c1119]/90 p-3`}>
                     <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span className="font-semibold text-emerald-300">
+                      <span className={`font-semibold ${accentTextClass}`}>
                         {activityCategoryLabels[entry.category] ?? entry.category}
                       </span>
                       <span>{formatTimestamp(entry.created_at)}</span>
@@ -1198,7 +1775,7 @@ export default function Home() {
                           href={`${explorerBaseUrl}/tx/${entry.txHash}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-emerald-300 underline"
+                          className={`${accentTextClass} underline`}
                         >
                           Tx を開く
                         </a>
@@ -1211,13 +1788,13 @@ export default function Home() {
           </section>
         )}
 
-        <section className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <h2 className="mb-4 text-xl font-semibold">ETH 出金リクエストを作成</h2>
+        <section className={panelClass}>
+          <h2 className="mb-4 text-xl font-semibold text-white">ETH 出金リクエストを作成</h2>
           <form className="grid gap-4" onSubmit={handleCreate}>
             <label className="text-sm">
               <span className="mb-1 block text-slate-300">受取人アドレス</span>
               <input
-                className="w-full rounded border border-white/20 bg-slate-900/60 p-2 text-sm focus:border-emerald-400 focus:outline-none"
+                className={inputBase}
                 value={formData.recipient}
                 onChange={(e) => setFormData((prev) => ({ ...prev, recipient: e.target.value }))}
                 placeholder="0x..."
@@ -1226,7 +1803,7 @@ export default function Home() {
             <label className="text-sm">
               <span className="mb-1 block text-slate-300">金額 (ETH)</span>
               <input
-                className="w-full rounded border border-white/20 bg-slate-900/60 p-2 text-sm focus:border-emerald-400 focus:outline-none"
+                className={inputBase}
                 value={formData.amount}
                 onChange={(e) => setFormData((prev) => ({ ...prev, amount: e.target.value }))}
                 placeholder="1.0"
@@ -1235,30 +1812,22 @@ export default function Home() {
             <label className="text-sm">
               <span className="mb-1 block text-slate-300">期限 (分, 任意)</span>
               <input
-                className="w-full rounded border border-white/20 bg-slate-900/60 p-2 text-sm focus:border-emerald-400 focus:outline-none"
+                className={inputBase}
                 value={formData.expiryMinutes}
                 onChange={(e) => setFormData((prev) => ({ ...prev, expiryMinutes: e.target.value }))}
                 placeholder="60"
               />
             </label>
-            <button
-              type="submit"
-              className="rounded bg-emerald-500 px-6 py-2 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:opacity-40"
-              disabled={busy}
-            >
+            <button type="submit" className={primaryButtonClass} disabled={busy}>
               リクエストを送信
             </button>
           </form>
         </section>
 
-        <section className="rounded-2xl border border-white/10 bg-white/5 p-6">
+        <section className={panelClass}>
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold">最新のリクエスト</h2>
-            <button
-              className="text-sm text-emerald-300 hover:underline disabled:opacity-40"
-              onClick={loadSnapshot}
-              disabled={busy}
-            >
+            <h2 className="text-xl font-semibold text-white">最新のリクエスト</h2>
+            <button className={`${accentTextClass} text-sm hover:underline disabled:opacity-40`} onClick={loadSnapshot} disabled={busy}>
               更新
             </button>
           </div>
@@ -1305,14 +1874,14 @@ export default function Home() {
                         <td className="py-2">
                           <div className="flex flex-wrap gap-2">
                             <button
-                              className="rounded border border-white/30 px-3 py-1 text-xs hover:border-emerald-400 disabled:opacity-40"
+                              className={miniGhostButton}
                               onClick={() => handleApproval(entry.id)}
                               disabled={!isActive || busy}
                             >
                               承認
                             </button>
                             <button
-                              className="rounded bg-emerald-500 px-3 py-1 text-xs font-semibold text-black hover:bg-emerald-400 disabled:opacity-40"
+                              className={miniPrimaryButton}
                               onClick={() => handleExecute(entry.id)}
                               disabled={!canExecute || busy}
                             >
@@ -1329,10 +1898,10 @@ export default function Home() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-white/10 bg-white/5 p-6">
+        <section className={panelClass}>
           <div className="mb-4 space-y-1">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold">SimpleSwap プール</h2>
+              <h2 className="text-xl font-semibold text-white">SimpleSwap プール</h2>
               <span className="text-xs text-slate-400">LP トークン: GLP</span>
             </div>
             <p className="text-sm text-slate-300">
@@ -1347,36 +1916,36 @@ export default function Home() {
           ) : (
             <div className="space-y-6">
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">リザーブ ({tokenMetadata.token0.symbol})</p>
                   <p className="text-lg font-semibold">
                     {formatTokenDisplay(swapSnapshot.reserve0, "token0")}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">リザーブ ({tokenMetadata.token1.symbol})</p>
                   <p className="text-lg font-semibold">
                     {formatTokenDisplay(swapSnapshot.reserve1, "token1")}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">LP 総供給</p>
                   <p className="text-lg font-semibold">{swapSnapshot.totalSupply} GLP</p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">あなたの LP</p>
                   <p className="text-lg font-semibold">{formattedLpBalance} GLP</p>
                 </div>
               </div>
 
               <div className="grid gap-6 lg:grid-cols-3">
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
-                  <h3 className="mb-3 text-base font-semibold">流動性を追加</h3>
+                <div className={sectionCardClass}>
+                  <h3 className="mb-3 text-base font-semibold text-white">流動性を追加</h3>
                   <form className="grid gap-3 text-sm" onSubmit={handleAddLiquidity}>
                     <label>
                       <span className="mb-1 block text-slate-300">{tokenMetadata.token0.symbol} 金額</span>
                       <input
-                        className="w-full rounded border border-white/20 bg-slate-950/60 p-2 focus:border-emerald-400 focus:outline-none"
+                        className={inputBase}
                         value={liquidityForm.amount0}
                         onChange={(e) => setLiquidityForm((prev) => ({ ...prev, amount0: e.target.value }))}
                         placeholder="0.0"
@@ -1385,7 +1954,7 @@ export default function Home() {
                     <label>
                       <span className="mb-1 block text-slate-300">{tokenMetadata.token1.symbol} 金額</span>
                       <input
-                        className="w-full rounded border border-white/20 bg-slate-950/60 p-2 focus:border-emerald-400 focus:outline-none"
+                        className={inputBase}
                         value={liquidityForm.amount1}
                         onChange={(e) => setLiquidityForm((prev) => ({ ...prev, amount1: e.target.value }))}
                         placeholder="0.0"
@@ -1394,29 +1963,25 @@ export default function Home() {
                     <label>
                       <span className="mb-1 block text-slate-300">最小受取 LP (任意)</span>
                       <input
-                        className="w-full rounded border border-white/20 bg-slate-950/60 p-2 focus:border-emerald-400 focus:outline-none"
+                        className={inputBase}
                         value={liquidityForm.minShares}
                         onChange={(e) => setLiquidityForm((prev) => ({ ...prev, minShares: e.target.value }))}
                         placeholder="0"
                       />
                     </label>
-                    <button
-                      type="submit"
-                      className="rounded bg-emerald-500 px-4 py-2 font-semibold text-black hover:bg-emerald-400 disabled:opacity-40"
-                      disabled={busy}
-                    >
+                    <button type="submit" className={primaryButtonClass} disabled={busy}>
                       追加する
                     </button>
                   </form>
                 </div>
 
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
-                  <h3 className="mb-3 text-base font-semibold">流動性を引き出す</h3>
+                <div className={sectionCardClass}>
+                  <h3 className="mb-3 text-base font-semibold text-white">流動性を引き出す</h3>
                   <form className="grid gap-3 text-sm" onSubmit={handleRemoveLiquidity}>
                     <label>
                       <span className="mb-1 block text-slate-300">バーンする LP 数量</span>
                       <input
-                        className="w-full rounded border border-white/20 bg-slate-950/60 p-2 focus:border-emerald-400 focus:outline-none"
+                        className={inputBase}
                         value={removeForm.shares}
                         onChange={(e) => setRemoveForm((prev) => ({ ...prev, shares: e.target.value }))}
                         placeholder="0.0"
@@ -1425,7 +1990,7 @@ export default function Home() {
                     <label>
                       <span className="mb-1 block text-slate-300">最小 {tokenMetadata.token0.symbol}</span>
                       <input
-                        className="w-full rounded border border-white/20 bg-slate-950/60 p-2 focus:border-emerald-400 focus:outline-none"
+                        className={inputBase}
                         value={removeForm.minAmount0}
                         onChange={(e) => setRemoveForm((prev) => ({ ...prev, minAmount0: e.target.value }))}
                         placeholder="0"
@@ -1434,30 +1999,26 @@ export default function Home() {
                     <label>
                       <span className="mb-1 block text-slate-300">最小 {tokenMetadata.token1.symbol}</span>
                       <input
-                        className="w-full rounded border border-white/20 bg-slate-950/60 p-2 focus:border-emerald-400 focus:outline-none"
+                        className={inputBase}
                         value={removeForm.minAmount1}
                         onChange={(e) => setRemoveForm((prev) => ({ ...prev, minAmount1: e.target.value }))}
                         placeholder="0"
                       />
                     </label>
-                    <button
-                      type="submit"
-                      className="rounded bg-slate-100 px-4 py-2 font-semibold text-black hover:bg-slate-200 disabled:opacity-40"
-                      disabled={busy}
-                    >
+                    <button type="submit" className={ghostButtonClass} disabled={busy}>
                       引き出す
                     </button>
                   </form>
                 </div>
 
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
-                  <h3 className="mb-3 text-base font-semibold">スワップ</h3>
+                <div className={sectionCardClass}>
+                  <h3 className="mb-3 text-base font-semibold text-white">スワップ</h3>
                   <form className="grid gap-3 text-sm" onSubmit={handleSwap}>
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-slate-300">方向</span>
                       <button
                         type="button"
-                        className="text-xs text-emerald-300 hover:underline"
+                        className={`${accentTextClass} text-xs hover:underline`}
                         onClick={toggleSwapDirection}
                       >
                         {swapDirectionLabel}
@@ -1466,7 +2027,7 @@ export default function Home() {
                     <label>
                       <span className="mb-1 block text-slate-300">スワップ入力</span>
                       <input
-                        className="w-full rounded border border-white/20 bg-slate-950/60 p-2 focus:border-emerald-400 focus:outline-none"
+                        className={inputBase}
                         value={swapForm.amountIn}
                         onChange={(e) => setSwapForm((prev) => ({ ...prev, amountIn: e.target.value }))}
                         placeholder="0.0"
@@ -1475,17 +2036,13 @@ export default function Home() {
                     <label>
                       <span className="mb-1 block text-slate-300">最小受取 (任意)</span>
                       <input
-                        className="w-full rounded border border-white/20 bg-slate-950/60 p-2 focus:border-emerald-400 focus:outline-none"
+                        className={inputBase}
                         value={swapForm.minAmountOut}
                         onChange={(e) => setSwapForm((prev) => ({ ...prev, minAmountOut: e.target.value }))}
                         placeholder="0"
                       />
                     </label>
-                    <button
-                      type="submit"
-                      className="rounded bg-emerald-500 px-4 py-2 font-semibold text-black hover:bg-emerald-400 disabled:opacity-40"
-                      disabled={busy}
-                    >
+                    <button type="submit" className={primaryButtonClass} disabled={busy}>
                       スワップする
                     </button>
                   </form>
@@ -1495,10 +2052,10 @@ export default function Home() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-white/10 bg-white/5 p-6">
+        <section className={panelClass}>
           <div className="mb-4 space-y-1">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold">レンディングプール</h2>
+              <h2 className="text-xl font-semibold text-white">レンディングプール</h2>
               <span className="text-xs text-slate-400">
                 担保: {lendingMetadata.collateralToken.symbol} / 借入: {lendingMetadata.debtToken.symbol}
               </span>
@@ -1515,106 +2072,98 @@ export default function Home() {
           ) : (
             <div className="space-y-6">
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">あなたの担保</p>
                   <p className="text-lg font-semibold">
                     {formatLendingToken(lendingSnapshot.collateral, "collateral")}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">あなたの借入残高</p>
                   <p className="text-lg font-semibold">
                     {formatLendingToken(lendingSnapshot.debt, "debt")}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">借入上限 (CF)</p>
                   <p className="text-lg font-semibold">
                     {formatLendingToken(lendingSnapshot.borrowLimit, "debt")}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">ヘルスファクター</p>
                   <p className="text-lg font-semibold">{lendingSnapshot.healthFactor}</p>
                 </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">プール担保総額</p>
                   <p className="text-lg font-semibold">
                     {formatLendingToken(lendingSnapshot.totalCollateral, "collateral")}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">借入総額</p>
                   <p className="text-lg font-semibold">
                     {formatLendingToken(lendingSnapshot.totalBorrows, "debt")}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">利用可能流動性</p>
                   <p className="text-lg font-semibold">
                     {formatLendingToken(lendingSnapshot.availableLiquidity, "debt")}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">利用率</p>
                   <p className="text-lg font-semibold">{lendingSnapshot.utilization}</p>
                 </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">担保トークン価格 (USD)</p>
                   <p className="text-lg font-semibold">{lendingSnapshot.collateralPrice}</p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">借入トークン価格 (USD)</p>
                   <p className="text-lg font-semibold">{lendingSnapshot.debtPrice}</p>
                 </div>
               </div>
 
               <div className="grid gap-6 lg:grid-cols-2">
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
-                  <h3 className="mb-3 text-base font-semibold">担保を預け入れ</h3>
+                <div className={sectionCardClass}>
+                  <h3 className="mb-3 text-base font-semibold text-white">担保を預け入れ</h3>
                   <form className="grid gap-3 text-sm" onSubmit={handleLendingDeposit}>
                     <label>
                       <span className="mb-1 block text-slate-300">{lendingMetadata.collateralToken.symbol} 金額</span>
                       <input
-                        className="w-full rounded border border-white/20 bg-slate-950/60 p-2 focus:border-emerald-400 focus:outline-none"
+                        className={inputBase}
                         value={lendingForms.deposit}
                         onChange={(e) => setLendingForms((prev) => ({ ...prev, deposit: e.target.value }))}
                         placeholder="0.0"
                       />
                     </label>
-                    <button
-                      type="submit"
-                      className="rounded bg-emerald-500 px-4 py-2 font-semibold text-black hover:bg-emerald-400 disabled:opacity-40"
-                      disabled={busy}
-                    >
+                    <button type="submit" className={primaryButtonClass} disabled={busy}>
                       預け入れる
                     </button>
                   </form>
                 </div>
 
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
-                  <h3 className="mb-3 text-base font-semibold">担保を引き出す</h3>
+                <div className={sectionCardClass}>
+                  <h3 className="mb-3 text-base font-semibold text-white">担保を引き出す</h3>
                   <form className="grid gap-3 text-sm" onSubmit={handleLendingWithdraw}>
                     <label>
                       <span className="mb-1 block text-slate-300">{lendingMetadata.collateralToken.symbol} 金額</span>
                       <input
-                        className="w-full rounded border border-white/20 bg-slate-950/60 p-2 focus:border-emerald-400 focus:outline-none"
+                        className={inputBase}
                         value={lendingForms.withdraw}
                         onChange={(e) => setLendingForms((prev) => ({ ...prev, withdraw: e.target.value }))}
                         placeholder="0.0"
                       />
                     </label>
-                    <button
-                      type="submit"
-                      className="rounded bg-slate-100 px-4 py-2 font-semibold text-black hover:bg-slate-200 disabled:opacity-40"
-                      disabled={busy}
-                    >
+                    <button type="submit" className={ghostButtonClass} disabled={busy}>
                       引き出す
                     </button>
                   </form>
@@ -1622,45 +2171,37 @@ export default function Home() {
               </div>
 
               <div className="grid gap-6 lg:grid-cols-2">
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
-                  <h3 className="mb-3 text-base font-semibold">借入</h3>
+                <div className={sectionCardClass}>
+                  <h3 className="mb-3 text-base font-semibold text-white">借入</h3>
                   <form className="grid gap-3 text-sm" onSubmit={handleLendingBorrow}>
                     <label>
                       <span className="mb-1 block text-slate-300">{lendingMetadata.debtToken.symbol} 金額</span>
                       <input
-                        className="w-full rounded border border-white/20 bg-slate-950/60 p-2 focus:border-emerald-400 focus:outline-none"
+                        className={inputBase}
                         value={lendingForms.borrow}
                         onChange={(e) => setLendingForms((prev) => ({ ...prev, borrow: e.target.value }))}
                         placeholder="0.0"
                       />
                     </label>
-                    <button
-                      type="submit"
-                      className="rounded bg-emerald-500 px-4 py-2 font-semibold text-black hover:bg-emerald-400 disabled:opacity-40"
-                      disabled={busy}
-                    >
+                    <button type="submit" className={primaryButtonClass} disabled={busy}>
                       借り入れる
                     </button>
                   </form>
                 </div>
 
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
-                  <h3 className="mb-3 text-base font-semibold">返済</h3>
+                <div className={sectionCardClass}>
+                  <h3 className="mb-3 text-base font-semibold text-white">返済</h3>
                   <form className="grid gap-3 text-sm" onSubmit={handleLendingRepay}>
                     <label>
                       <span className="mb-1 block text-slate-300">{lendingMetadata.debtToken.symbol} 金額</span>
                       <input
-                        className="w-full rounded border border-white/20 bg-slate-950/60 p-2 focus:border-emerald-400 focus:outline-none"
+                        className={inputBase}
                         value={lendingForms.repay}
                         onChange={(e) => setLendingForms((prev) => ({ ...prev, repay: e.target.value }))}
                         placeholder="0.0"
                       />
                     </label>
-                    <button
-                      type="submit"
-                      className="rounded bg-slate-100 px-4 py-2 font-semibold text-black hover:bg-slate-200 disabled:opacity-40"
-                      disabled={busy}
-                    >
+                    <button type="submit" className={ghostButtonClass} disabled={busy}>
                       返済する
                     </button>
                   </form>
@@ -1670,10 +2211,10 @@ export default function Home() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-white/10 bg-white/5 p-6">
+        <section className={panelClass}>
           <div className="mb-4 space-y-1">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold">ステーキング</h2>
+              <h2 className="text-xl font-semibold text-white">ステーキング</h2>
               <span className="text-xs text-slate-400">
                 トークン: {stakingMetadata.stakingToken.symbol} → 報酬: {stakingMetadata.rewardToken.symbol}
               </span>
@@ -1690,64 +2231,56 @@ export default function Home() {
           ) : (
             <div className="space-y-6">
               <div className="grid gap-4 sm:grid-cols-3">
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">あなたのステーク残高</p>
                   <p className="text-lg font-semibold">
                     {formatStakingToken(stakedBalance, "staking")}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">獲得可能な報酬</p>
                   <p className="text-lg font-semibold">
                     {formatStakingToken(pendingRewards, "reward")}
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                <div className={sectionCardClass}>
                   <p className="text-xs text-slate-300">プールアドレス</p>
                   <p className="text-xs font-mono text-slate-400">{stakingMetadata.poolAddress}</p>
                 </div>
               </div>
 
               <div className="grid gap-6 sm:grid-cols-2">
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
-                  <h3 className="mb-3 text-base font-semibold">預け入れ</h3>
+                <div className={sectionCardClass}>
+                  <h3 className="mb-3 text-base font-semibold text-white">預け入れ</h3>
                   <form className="grid gap-3 text-sm" onSubmit={handleStakingDeposit}>
                     <label>
                       <span className="mb-1 block text-slate-300">{stakingMetadata.stakingToken.symbol} 金額</span>
                       <input
-                        className="w-full rounded border border-white/20 bg-slate-950/60 p-2 focus:border-emerald-400 focus:outline-none"
+                        className={inputBase}
                         value={stakingAmount.deposit}
                         onChange={(e) => setStakingAmount((prev) => ({ ...prev, deposit: e.target.value }))}
                         placeholder="0.0"
                       />
                     </label>
-                    <button
-                      type="submit"
-                      className="rounded bg-emerald-500 px-4 py-2 font-semibold text-black hover:bg-emerald-400 disabled:opacity-40"
-                      disabled={busy}
-                    >
+                    <button type="submit" className={primaryButtonClass} disabled={busy}>
                       ステーキングする
                     </button>
                   </form>
                 </div>
 
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
-                  <h3 className="mb-3 text-base font-semibold">引き出し</h3>
+                <div className={sectionCardClass}>
+                  <h3 className="mb-3 text-base font-semibold text-white">引き出し</h3>
                   <form className="grid gap-3 text-sm" onSubmit={handleStakingWithdraw}>
                     <label>
                       <span className="mb-1 block text-slate-300">引き出す {stakingMetadata.stakingToken.symbol}</span>
                       <input
-                        className="w-full rounded border border-white/20 bg-slate-950/60 p-2 focus:border-emerald-400 focus:outline-none"
+                        className={inputBase}
                         value={stakingAmount.withdraw}
                         onChange={(e) => setStakingAmount((prev) => ({ ...prev, withdraw: e.target.value }))}
                         placeholder="0.0"
                       />
                     </label>
-                    <button
-                      type="submit"
-                      className="rounded bg-slate-100 px-4 py-2 font-semibold text-black hover:bg-slate-200 disabled:opacity-40"
-                      disabled={busy}
-                    >
+                    <button type="submit" className={ghostButtonClass} disabled={busy}>
                       引き出す
                     </button>
                   </form>

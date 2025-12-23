@@ -5,13 +5,24 @@ import type { ActivityCategory, CreateActivityPayload } from "@/lib/activityLog"
 import { buildActivityMessage } from "@/lib/activityLog";
 
 const TABLE = "activity_logs";
+const VALID_CATEGORIES: ActivityCategory[] = [
+  "guardian",
+  "swap",
+  "liquidity",
+  "staking",
+  "lending",
+  "system",
+];
 
 export async function GET(request: Request) {
   if (!hasSupabaseServerEnv) {
     return NextResponse.json({ data: [] });
   }
   const url = new URL(request.url);
-  const category = url.searchParams.get("category") as ActivityCategory | null;
+  const rawCategory = url.searchParams.get("category");
+  const category = VALID_CATEGORIES.includes(rawCategory as ActivityCategory)
+    ? (rawCategory as ActivityCategory)
+    : null;
   try {
     const supabase = getSupabaseServerClient();
     let query = supabase
@@ -25,7 +36,7 @@ export async function GET(request: Request) {
     const { data, error } = await query;
     if (error) {
       console.error("Supabase fetch failed", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: "Supabase fetch failed", details: error.message }, { status: 502 });
     }
     const normalized = (data ?? []).map((entry) => ({
       ...entry,
@@ -73,7 +84,7 @@ export async function POST(request: Request) {
     });
     if (error) {
       console.error("Supabase insert failed", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: "Supabase insert failed", details: error.message }, { status: 502 });
     }
     return NextResponse.json({ ok: true });
   } catch (err) {
