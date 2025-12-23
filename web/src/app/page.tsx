@@ -246,6 +246,15 @@ export default function Home() {
     setStatus("");
   }, []);
 
+  const normalizeAccount = useCallback((value: string) => {
+    try {
+      return getAddress(value);
+    } catch (err) {
+      console.warn("Failed to normalize address", err);
+      return value;
+    }
+  }, []);
+
   const updateAdminForm = useCallback(
     (field: keyof typeof adminForms, value: string) => {
       setAdminForms((prev) => ({ ...prev, [field]: value }));
@@ -1438,14 +1447,6 @@ export default function Home() {
   };
 
   const shorten = (value: string) => `${value.slice(0, 6)}…${value.slice(-4)}`;
-  const normalizeAccount = useCallback((value: string) => {
-    try {
-      return getAddress(value);
-    } catch (err) {
-      console.warn("Failed to normalize address", err);
-      return value;
-    }
-  }, []);
   const activityCategoryLabels: Record<ActivityCategory, string> = {
     guardian: "マルチシグ",
     swap: "スワップ",
