@@ -564,8 +564,8 @@ export default function Home() {
       const provider = await EthereumProvider.init({
         projectId: walletConnectProjectId,
         showQrModal: true,
-        chains: supportedChainIds,
-        optionalChains: supportedChainIds,
+        chains: [primaryChainId],
+        optionalChains: supportedChainIds.length > 0 ? supportedChainIds : [primaryChainId],
         methods: [
           "eth_sendTransaction",
           "eth_sign",
@@ -591,6 +591,7 @@ export default function Home() {
     }
   }, [
     normalizeAccount,
+    primaryChainId,
     resetMessages,
     supportedChainIds,
     walletConnectProjectId,
