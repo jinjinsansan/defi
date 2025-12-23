@@ -34,12 +34,17 @@ export interface LendingPoolInterface extends Interface {
       | "borrow"
       | "borrowIndex"
       | "collateralFactor"
+      | "collateralOracle"
       | "collateralToken"
+      | "collateralTokenDecimals"
+      | "debtOracle"
       | "debtToken"
+      | "debtTokenDecimals"
       | "depositCollateral"
       | "getAccountData"
       | "getBorrowBalance"
       | "getPoolData"
+      | "getPriceData"
       | "getRoleAdmin"
       | "grantRole"
       | "hasRole"
@@ -55,6 +60,7 @@ export interface LendingPoolInterface extends Interface {
       | "repay"
       | "revokeRole"
       | "setInterestRate"
+      | "setOracles"
       | "setRiskParameters"
       | "supportsInterface"
       | "totalBorrows"
@@ -75,6 +81,7 @@ export interface LendingPoolInterface extends Interface {
       | "Liquidated"
       | "LiquidityProvided"
       | "LiquidityWithdrawn"
+      | "OraclesUpdated"
       | "ParametersUpdated"
       | "Paused"
       | "Repaid"
@@ -117,10 +124,26 @@ export interface LendingPoolInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "collateralOracle",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "collateralToken",
     values?: undefined
   ): string;
+  encodeFunctionData(
+    functionFragment: "collateralTokenDecimals",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "debtOracle",
+    values?: undefined
+  ): string;
   encodeFunctionData(functionFragment: "debtToken", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "debtTokenDecimals",
+    values?: undefined
+  ): string;
   encodeFunctionData(
     functionFragment: "depositCollateral",
     values: [BigNumberish]
@@ -135,6 +158,10 @@ export interface LendingPoolInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "getPoolData",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "getPriceData",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -187,6 +214,10 @@ export interface LendingPoolInterface extends Interface {
   encodeFunctionData(
     functionFragment: "setInterestRate",
     values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setOracles",
+    values: [AddressLike, AddressLike]
   ): string;
   encodeFunctionData(
     functionFragment: "setRiskParameters",
@@ -245,10 +276,23 @@ export interface LendingPoolInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "collateralOracle",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "collateralToken",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "collateralTokenDecimals",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "debtOracle", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "debtToken", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "debtTokenDecimals",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "depositCollateral",
     data: BytesLike
@@ -263,6 +307,10 @@ export interface LendingPoolInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "getPoolData",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "getPriceData",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -304,6 +352,7 @@ export interface LendingPoolInterface extends Interface {
     functionFragment: "setInterestRate",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "setOracles", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "setRiskParameters",
     data: BytesLike
@@ -446,6 +495,22 @@ export namespace LiquidityWithdrawnEvent {
   export interface OutputObject {
     provider: string;
     amount: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace OraclesUpdatedEvent {
+  export type InputTuple = [
+    collateralOracle: AddressLike,
+    debtOracle: AddressLike
+  ];
+  export type OutputTuple = [collateralOracle: string, debtOracle: string];
+  export interface OutputObject {
+    collateralOracle: string;
+    debtOracle: string;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -633,9 +698,17 @@ export interface LendingPool extends BaseContract {
 
   collateralFactor: TypedContractMethod<[], [bigint], "view">;
 
+  collateralOracle: TypedContractMethod<[], [string], "view">;
+
   collateralToken: TypedContractMethod<[], [string], "view">;
 
+  collateralTokenDecimals: TypedContractMethod<[], [bigint], "view">;
+
+  debtOracle: TypedContractMethod<[], [string], "view">;
+
   debtToken: TypedContractMethod<[], [string], "view">;
+
+  debtTokenDecimals: TypedContractMethod<[], [bigint], "view">;
 
   depositCollateral: TypedContractMethod<
     [amount: BigNumberish],
@@ -669,6 +742,12 @@ export interface LendingPool extends BaseContract {
         index: bigint;
       }
     ],
+    "view"
+  >;
+
+  getPriceData: TypedContractMethod<
+    [],
+    [[bigint, bigint] & { collateralPrice: bigint; debtPrice: bigint }],
     "view"
   >;
 
@@ -726,6 +805,12 @@ export interface LendingPool extends BaseContract {
 
   setInterestRate: TypedContractMethod<
     [newRate: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
+  setOracles: TypedContractMethod<
+    [newCollateralOracle: AddressLike, newDebtOracle: AddressLike],
     [void],
     "nonpayable"
   >;
@@ -799,11 +884,23 @@ export interface LendingPool extends BaseContract {
     nameOrSignature: "collateralFactor"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
+    nameOrSignature: "collateralOracle"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
     nameOrSignature: "collateralToken"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "collateralTokenDecimals"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "debtOracle"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "debtToken"
   ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "debtTokenDecimals"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "depositCollateral"
   ): TypedContractMethod<[amount: BigNumberish], [void], "nonpayable">;
@@ -837,6 +934,13 @@ export interface LendingPool extends BaseContract {
         index: bigint;
       }
     ],
+    "view"
+  >;
+  getFunction(
+    nameOrSignature: "getPriceData"
+  ): TypedContractMethod<
+    [],
+    [[bigint, bigint] & { collateralPrice: bigint; debtPrice: bigint }],
     "view"
   >;
   getFunction(
@@ -904,6 +1008,13 @@ export interface LendingPool extends BaseContract {
   getFunction(
     nameOrSignature: "setInterestRate"
   ): TypedContractMethod<[newRate: BigNumberish], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "setOracles"
+  ): TypedContractMethod<
+    [newCollateralOracle: AddressLike, newDebtOracle: AddressLike],
+    [void],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "setRiskParameters"
   ): TypedContractMethod<
@@ -992,6 +1103,13 @@ export interface LendingPool extends BaseContract {
     LiquidityWithdrawnEvent.InputTuple,
     LiquidityWithdrawnEvent.OutputTuple,
     LiquidityWithdrawnEvent.OutputObject
+  >;
+  getEvent(
+    key: "OraclesUpdated"
+  ): TypedContractEvent<
+    OraclesUpdatedEvent.InputTuple,
+    OraclesUpdatedEvent.OutputTuple,
+    OraclesUpdatedEvent.OutputObject
   >;
   getEvent(
     key: "ParametersUpdated"
@@ -1130,6 +1248,17 @@ export interface LendingPool extends BaseContract {
       LiquidityWithdrawnEvent.InputTuple,
       LiquidityWithdrawnEvent.OutputTuple,
       LiquidityWithdrawnEvent.OutputObject
+    >;
+
+    "OraclesUpdated(address,address)": TypedContractEvent<
+      OraclesUpdatedEvent.InputTuple,
+      OraclesUpdatedEvent.OutputTuple,
+      OraclesUpdatedEvent.OutputObject
+    >;
+    OraclesUpdated: TypedContractEvent<
+      OraclesUpdatedEvent.InputTuple,
+      OraclesUpdatedEvent.OutputTuple,
+      OraclesUpdatedEvent.OutputObject
     >;
 
     "ParametersUpdated(uint256,uint256,uint256)": TypedContractEvent<
