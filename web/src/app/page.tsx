@@ -505,42 +505,6 @@ export default function Home() {
   }, [loadLendingSnapshot]);
 
   useEffect(() => {
-    if (!walletConnectProvider) {
-      return;
-    }
-    const handleAccountsChanged = async (accounts: string[]) => {
-      if (!accounts || accounts.length === 0) {
-        await disconnectWallet();
-        return;
-      }
-      try {
-        const browserProvider = new BrowserProvider(walletConnectProvider as unknown as Eip1193Provider);
-        const walletSigner = await browserProvider.getSigner();
-        setSigner(walletSigner);
-        setAccount(normalizeAccount(accounts[0]!));
-      } catch (err) {
-        console.error("WalletConnect account change handling failed", err);
-      }
-    };
-
-    const handleDisconnect = () => {
-      setWalletConnectProvider(null);
-      setSigner(null);
-      setAccount("");
-      setConnectionMethod(null);
-      setStatus("WalletConnect が切断されました。");
-    };
-
-    walletConnectProvider.on("accountsChanged", handleAccountsChanged);
-    walletConnectProvider.on("disconnect", handleDisconnect);
-
-    return () => {
-      walletConnectProvider.removeListener("accountsChanged", handleAccountsChanged);
-      walletConnectProvider.removeListener("disconnect", handleDisconnect);
-    };
-  }, [disconnectWallet, normalizeAccount, walletConnectProvider]);
-
-  useEffect(() => {
     loadActivityLogs();
   }, [loadActivityLogs]);
 
@@ -641,6 +605,42 @@ export default function Home() {
       setError((err as Error).message ?? "ウォレット接続の解除に失敗しました。");
     }
   }, [connectionMethod, resetMessages, walletConnectProvider]);
+
+  useEffect(() => {
+    if (!walletConnectProvider) {
+      return;
+    }
+    const handleAccountsChanged = async (accounts: string[]) => {
+      if (!accounts || accounts.length === 0) {
+        await disconnectWallet();
+        return;
+      }
+      try {
+        const browserProvider = new BrowserProvider(walletConnectProvider as unknown as Eip1193Provider);
+        const walletSigner = await browserProvider.getSigner();
+        setSigner(walletSigner);
+        setAccount(normalizeAccount(accounts[0]!));
+      } catch (err) {
+        console.error("WalletConnect account change handling failed", err);
+      }
+    };
+
+    const handleDisconnect = () => {
+      setWalletConnectProvider(null);
+      setSigner(null);
+      setAccount("");
+      setConnectionMethod(null);
+      setStatus("WalletConnect が切断されました。");
+    };
+
+    walletConnectProvider.on("accountsChanged", handleAccountsChanged);
+    walletConnectProvider.on("disconnect", handleDisconnect);
+
+    return () => {
+      walletConnectProvider.removeListener("accountsChanged", handleAccountsChanged);
+      walletConnectProvider.removeListener("disconnect", handleDisconnect);
+    };
+  }, [disconnectWallet, normalizeAccount, walletConnectProvider]);
 
   const ensureSigner = () => {
     if (!signer) {
