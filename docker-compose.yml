@@ -1,0 +1,16 @@
+services:
+  hardhat:
+    build:
+      context: .
+      dockerfile: ./docker/hardhat.Dockerfile
+    working_dir: /workspace/contracts
+    volumes:
+      - ./contracts:/workspace/contracts
+      - hardhat-node-modules:/workspace/contracts/node_modules
+    environment:
+      - FORCE_COLOR=1
+    command: >
+      bash -c "if [ ! -f node_modules/.bin/hardhat ]; then npm ci; fi && npx hardhat test"
+
+volumes:
+  hardhat-node-modules:

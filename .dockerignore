@@ -1,0 +1,11 @@
+.git
+.gitignore
+node_modules
+contracts/node_modules
+contracts/artifacts
+contracts/cache
+contracts/typechain-types
+web/node_modules
+web/.next
+web/out
+*.log

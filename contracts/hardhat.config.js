@@ -1,5 +1,6 @@
 require("dotenv").config({ path: __dirname + "/.env" });
 require("@nomicfoundation/hardhat-toolbox");
+require("@typechain/hardhat");
 
 const privateKey = process.env.DEPLOYER_PRIVATE_KEY || "";
 const accounts = privateKey ? [privateKey] : [];
@@ -14,6 +15,10 @@ const config = {
         runs: 200,
       },
     },
+  },
+  typechain: {
+    outDir: "typechain-types",
+    target: "ethers-v6",
   },
   networks: {
     hardhat: {},
@@ -36,6 +41,24 @@ const config = {
       polygonAmoy: process.env.POLYGONSCAN_API_KEY || "",
       bscTestnet: process.env.BSCSCAN_API_KEY || "",
     },
+    customChains: [
+      {
+        network: "polygonAmoy",
+        chainId: 80002,
+        urls: {
+          apiURL: "https://api-amoy.polygonscan.com/api",
+          browserURL: "https://amoy.polygonscan.com",
+        },
+      },
+      {
+        network: "bscTestnet",
+        chainId: 97,
+        urls: {
+          apiURL: "https://api-testnet.bscscan.com/api",
+          browserURL: "https://testnet.bscscan.com",
+        },
+      },
+    ],
   },
 };
 

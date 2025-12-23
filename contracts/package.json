@@ -6,7 +6,9 @@
   "scripts": {
     "test": "hardhat test",
     "compile": "hardhat compile",
-    "clean": "hardhat clean"
+    "clean": "hardhat clean",
+    "export:frontend": "hardhat compile && typechain --target ethers-v6 --out-dir typechain-types artifacts/contracts/GuardianVault.sol/GuardianVault.json artifacts/contracts/mocks/TestToken.sol/TestToken.json artifacts/contracts/amm/SimpleSwap.sol/SimpleSwap.json artifacts/contracts/staking/StakingPool.sol/StakingPool.json artifacts/contracts/lending/LendingPool.sol/LendingPool.json && node scripts/export-frontend-artifacts.js",
+    "deploy:contract": "hardhat run scripts/deploy.js"
   },
   "keywords": [],
   "author": "",
@@ -14,7 +16,11 @@
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
     "@nomicfoundation/hardhat-ethers": "^3.1.0",
+    "@nomicfoundation/hardhat-network-helpers": "^1.0.12",
     "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "@openzeppelin/contracts": "^5.1.0",
+    "@typechain/ethers-v6": "^0.5.1",
+    "@typechain/hardhat": "^9.1.0",
     "@types/chai": "^4.3.11",
     "@types/mocha": "^10.0.6",
     "@types/node": "^20.11.30",
@@ -24,6 +30,7 @@
     "fp-ts": "^2.16.11",
     "hardhat": "^2.28.0",
     "ts-node": "^10.9.2",
+    "typechain": "^8.3.2",
     "typescript": "^5.9.3"
   }
 }

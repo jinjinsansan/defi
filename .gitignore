@@ -6,11 +6,14 @@ contracts/cache/
 contracts/artifacts/
 contracts/typechain-types/
 contracts/.env
+contracts/deployments/*.json
+!contracts/deployments/.gitkeep
 
 # Next.js
 web/.next/
 web/out/
 web/.env*
+!web/.env.example
 
 # Logs
 *.log

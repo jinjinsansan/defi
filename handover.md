@@ -12,10 +12,16 @@
 ## 既知の課題 / ブロッカー
 - `npx hardhat test` が WSL2 上で `Bus error (core dumped)` になる。`dmesg` には Node プロセスの SIGBUS が記録されており、WSL2 + Linux カーネルの既知不具合と推測。
 - `/mnt/e` → `/home` への移動、Node 18/20/22 切り替え、`HARDHAT_MAX_WORKERS=1` 等を試しても改善せず。
-- **想定解決策**:
-  - `wsl --update && wsl --shutdown` 実行後に Windows を再起動し、最新カーネルで再検証。
-  - もしくは Docker/Podman など別 Linux 環境で `npx hardhat test` を実行。
-  - それまでは `npx hardhat compile` と `npm run lint` で基本的な検証のみ可能。
+- **対処済みワークアラウンド**:
+  - Windows 側で `wsl --update && wsl --shutdown` を実施しても根本解消しない場合は、Docker 経由でテストを実行する。
+  - リポジトリ直下に `docker-compose.yml` と `docker/hardhat.Dockerfile` を追加済み。以下のコマンドで依存関係インストール→Hardhat テスト実行まで自動化。
+
+```bash
+cd /home/jinjinsansan/defi
+docker compose run --rm hardhat
+```
+
+- 初回実行時に `contracts/node_modules` が空の場合でも、コンテナ内で `npm ci` が走るため追加の手作業は不要。
 
 ## 次にやること
 1. WSL 更新または Docker 環境で `npx hardhat test` が通る状態を確保する。
@@ -28,7 +34,7 @@
 cd /home/jinjinsansan/defi/contracts
 npm install
 npx hardhat compile
-npx hardhat test   # ← 現状 SIGBUS。環境改善後に再試行。
+npx hardhat test   # ← WSL2 では SIGBUS になるため、Docker で `docker compose run --rm hardhat` を推奨。
 
 # Next.js
 cd /home/jinjinsansan/defi/web
